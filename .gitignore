@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+build/
+app/build/
+*.apk
+*.aab
+
+# Android
+local.properties
+*.jks
+keystore.b64
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# NDK cache (large — rebuild on CI)
+app/.cxx/
+
+# Model files (too large for git)
+app/src/main/assets/models/*.gguf

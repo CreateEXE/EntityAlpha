@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- External storage read — needed to pick model files via file manager -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- No internet permission required — fully offline -->
+
+    <application
+        android:name=".ProjectEXEApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="Project EXE"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ProjectEXE"
+        android:largeHeap="true"
+        android:hardwareAccelerated="true">
+
+        <!--
+          largeHeap="true" — critical for 6GB device running 2–4GB GGUF model.
+          Android will allocate from the larger heap pool, reducing OOM kills.
+          On the Revvl 7 this typically gives ~3.5–4GB usable JVM heap.
+        -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize"
+            android:screenOrientation="portrait">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
+
+</manifest>

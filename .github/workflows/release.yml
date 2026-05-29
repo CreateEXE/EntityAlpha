@@ -1,0 +1,244 @@
+name: Release — Sign & Publish
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'       # e.g. v0.2.0
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'     # e.g. v0.2.0-beta1
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Version tag (e.g. v0.2.0)'
+        required: true
+      draft_release:
+        description: 'Create as draft release'
+        required: false
+        default: 'true'
+        type: boolean
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false    # Never cancel a release in progress
+
+env:
+  JAVA_VERSION: '17'
+  NDK_VERSION:  '26.3.11579264'
+  BUILD_TOOLS:  '34.0.0'
+
+jobs:
+  # ─────────────────────────────────────────────────────────
+  #  Build signed release APK + AAB
+  # ─────────────────────────────────────────────────────────
+  release:
+    name: Build & Sign Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write    # Needed to create GitHub Release
+
+    steps:
+      - name: Checkout + submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME:-${{ github.event.inputs.version_tag }}}"
+          VERSION="${TAG#v}"
+          VERSION_CODE=$(echo "$VERSION" | awk -F'[.-]' '{printf "%d%02d%02d", $1, $2, $3}')
+          echo "tag=$TAG"             >> $GITHUB_OUTPUT
+          echo "name=$VERSION"        >> $GITHUB_OUTPUT
+          echo "code=$VERSION_CODE"   >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION (code: $VERSION_CODE)"
+
+      - name: Setup JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: gradle
+
+      - name: Get llama.cpp SHA for cache key
+        id: llama_sha
+        run: |
+          SHA=$(git -C app/src/main/cpp/llama.cpp rev-parse HEAD 2>/dev/null || echo 'missing')
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Restore NDK build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/.cxx
+            app/build/intermediates/cmake
+          key: ndk-release-${{ env.NDK_VERSION }}-${{ steps.llama_sha.outputs.sha }}-${{ hashFiles('app/src/main/cpp/**') }}
+          restore-keys: |
+            ndk-${{ env.NDK_VERSION }}-${{ steps.llama_sha.outputs.sha }}-
+
+      - name: Restore Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-release-${{ hashFiles('**/*.gradle.kts', 'gradle/libs.versions.toml') }}
+          restore-keys: gradle-
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK + CMake
+        run: |
+          echo "y" | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            "ndk;${{ env.NDK_VERSION }}" \
+            "cmake;3.22.1" \
+            "build-tools;${{ env.BUILD_TOOLS }}"
+
+      - name: Verify llama.cpp submodule
+        run: |
+          if [ ! -f "app/src/main/cpp/llama.cpp/CMakeLists.txt" ]; then
+            echo "::error::llama.cpp submodule not found"
+            exit 1
+          fi
+
+      - name: Decode keystore
+        # Secret ANDROID_KEYSTORE must be the base64-encoded .jks file.
+        # Generate: base64 -w 0 your-keystore.jks > keystore.b64
+        # Then paste contents into GitHub → Settings → Secrets → ANDROID_KEYSTORE
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 -d > keystore.jks
+          ls -la keystore.jks
+
+      - name: Inject version into build.gradle.kts
+        run: |
+          sed -i "s/versionCode     = [0-9]*/versionCode     = ${{ steps.version.outputs.code }}/" app/build.gradle.kts
+          sed -i "s/versionName     = \"[^\"]*\"/versionName     = \"${{ steps.version.outputs.name }}\"/" app/build.gradle.kts
+          echo "Version set to ${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})"
+
+      - name: Grant gradlew execute
+        run: chmod +x gradlew
+
+      # ── Build release APK (unsigned first, then sign) ──────
+      - name: Build Release APK
+        run: |
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            -Pandroid.ndkVersion=${{ env.NDK_VERSION }}
+
+      - name: Sign APK
+        run: |
+          $ANDROID_SDK_ROOT/build-tools/${{ env.BUILD_TOOLS }}/apksigner sign \
+            --ks keystore.jks \
+            --ks-key-alias "${{ secrets.KEY_ALIAS }}" \
+            --ks-pass "pass:${{ secrets.KEYSTORE_PASSWORD }}" \
+            --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
+            --out app/build/outputs/apk/release/projectexe-${{ steps.version.outputs.name }}-signed.apk \
+            app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Verify APK signature
+        run: |
+          $ANDROID_SDK_ROOT/build-tools/${{ env.BUILD_TOOLS }}/apksigner verify \
+            --print-certs \
+            app/build/outputs/apk/release/projectexe-${{ steps.version.outputs.name }}-signed.apk
+
+      # ── Build AAB (for sideloading via bundletool) ─────────
+      - name: Build Release AAB
+        run: |
+          ./gradlew bundleRelease \
+            --no-daemon \
+            -Pandroid.ndkVersion=${{ env.NDK_VERSION }}
+
+      - name: Sign AAB
+        run: |
+          $ANDROID_SDK_ROOT/build-tools/${{ env.BUILD_TOOLS }}/apksigner sign \
+            --ks keystore.jks \
+            --ks-key-alias "${{ secrets.KEY_ALIAS }}" \
+            --ks-pass "pass:${{ secrets.KEYSTORE_PASSWORD }}" \
+            --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
+            --min-sdk-version 28 \
+            app/build/outputs/bundle/release/app-release.aab
+
+      # ── APK size report ────────────────────────────────────
+      - name: Generate size report
+        id: sizes
+        run: |
+          APK_SIZE=$(du -sh app/build/outputs/apk/release/projectexe-${{ steps.version.outputs.name }}-signed.apk | cut -f1)
+          AAB_SIZE=$(du -sh app/build/outputs/bundle/release/app-release.aab | cut -f1)
+          echo "apk_size=$APK_SIZE" >> $GITHUB_OUTPUT
+          echo "aab_size=$AAB_SIZE" >> $GITHUB_OUTPUT
+          echo "APK: $APK_SIZE | AAB: $AAB_SIZE"
+
+      # ── Upload artifacts ───────────────────────────────────
+      - name: Upload signed APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: projectexe-${{ steps.version.outputs.name }}-apk
+          path: app/build/outputs/apk/release/projectexe-${{ steps.version.outputs.name }}-signed.apk
+          retention-days: 90
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: projectexe-${{ steps.version.outputs.name }}-aab
+          path: app/build/outputs/bundle/release/app-release.aab
+          retention-days: 90
+
+      # ── GitHub Release ─────────────────────────────────────
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          # Extract changelog between last two tags
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            CHANGES=$(git log --pretty=format:"- %s (%h)" "$PREV_TAG"..HEAD | head -30)
+          else
+            CHANGES=$(git log --pretty=format:"- %s (%h)" | head -30)
+          fi
+          echo "changes<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGES"     >> $GITHUB_OUTPUT
+          echo "EOF"          >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name:   ${{ steps.version.outputs.tag }}
+          name:       "Project.EXE ${{ steps.version.outputs.name }}"
+          draft:      ${{ github.event.inputs.draft_release == 'true' }}
+          prerelease: ${{ contains(steps.version.outputs.tag, '-') }}
+          body: |
+            ## Project.EXE ${{ steps.version.outputs.name }}
+
+            ### What's Changed
+            ${{ steps.release_notes.outputs.changes }}
+
+            ### Build Info
+            - APK Size: ${{ steps.sizes.outputs.apk_size }}
+            - AAB Size: ${{ steps.sizes.outputs.aab_size }}
+            - NDK: ${{ env.NDK_VERSION }}
+            - llama.cpp: `${{ steps.llama_sha.outputs.sha }}`
+            - Target: arm64-v8a (Cortex-A78 / Revvl 7 optimized)
+
+            ### Installation
+            Download `projectexe-${{ steps.version.outputs.name }}-signed.apk` and install via:
+            ```
+            adb install projectexe-${{ steps.version.outputs.name }}-signed.apk
+            ```
+
+            ### Model Setup
+            ```
+            adb push your-model.gguf \
+              /sdcard/Android/data/com.projectexe/files/models/
+            ```
+            Recommended: `qwen2.5-1.5b-instruct-q4_k_m.gguf` (~1GB) for Revvl 7
+          files: |
+            app/build/outputs/apk/release/projectexe-${{ steps.version.outputs.name }}-signed.apk
+            app/build/outputs/bundle/release/app-release.aab
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Secure cleanup — remove keystore from runner
+      - name: Cleanup keystore
+        if: always()
+        run: rm -f keystore.jks
