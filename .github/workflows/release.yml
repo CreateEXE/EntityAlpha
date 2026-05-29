@@ -3,8 +3,8 @@ name: Release — Sign & Publish
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'       # e.g. v0.2.0
-      - 'v[0-9]+.[0-9]+.[0-9]+-*'     # e.g. v0.2.0-beta1
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
   workflow_dispatch:
     inputs:
       version_tag:
@@ -18,7 +18,7 @@ on:
 
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: false    # Never cancel a release in progress
+  cancel-in-progress: false
 
 env:
   JAVA_VERSION: '17'
@@ -26,18 +26,15 @@ env:
   BUILD_TOOLS:  '34.0.0'
 
 jobs:
-  # ─────────────────────────────────────────────────────────
-  #  Build signed release APK + AAB
-  # ─────────────────────────────────────────────────────────
   release:
     name: Build & Sign Release
     runs-on: ubuntu-latest
     permissions:
-      contents: write    # Needed to create GitHub Release
+      contents: write
 
     steps:
       - name: Checkout + submodules
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
           fetch-depth: 0
@@ -48,13 +45,13 @@ jobs:
           TAG="${GITHUB_REF_NAME:-${{ github.event.inputs.version_tag }}}"
           VERSION="${TAG#v}"
           VERSION_CODE=$(echo "$VERSION" | awk -F'[.-]' '{printf "%d%02d%02d", $1, $2, $3}')
-          echo "tag=$TAG"             >> $GITHUB_OUTPUT
-          echo "name=$VERSION"        >> $GITHUB_OUTPUT
-          echo "code=$VERSION_CODE"   >> $GITHUB_OUTPUT
-          echo "Building version: $VERSION (code: $VERSION_CODE)"
+          echo "tag=$TAG"           >> $GITHUB_OUTPUT
+          echo "name=$VERSION"      >> $GITHUB_OUTPUT
+          echo "code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "Building: $VERSION (code: $VERSION_CODE)"
 
       - name: Setup JDK ${{ env.JAVA_VERSION }}
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
@@ -67,7 +64,7 @@ jobs:
           echo "sha=$SHA" >> $GITHUB_OUTPUT
 
       - name: Restore NDK build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             app/.cxx
@@ -77,7 +74,7 @@ jobs:
             ndk-${{ env.NDK_VERSION }}-${{ steps.llama_sha.outputs.sha }}-
 
       - name: Restore Gradle cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.gradle/caches
@@ -103,9 +100,6 @@ jobs:
           fi
 
       - name: Decode keystore
-        # Secret ANDROID_KEYSTORE must be the base64-encoded .jks file.
-        # Generate: base64 -w 0 your-keystore.jks > keystore.b64
-        # Then paste contents into GitHub → Settings → Secrets → ANDROID_KEYSTORE
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 -d > keystore.jks
           ls -la keystore.jks
@@ -114,12 +108,10 @@ jobs:
         run: |
           sed -i "s/versionCode     = [0-9]*/versionCode     = ${{ steps.version.outputs.code }}/" app/build.gradle.kts
           sed -i "s/versionName     = \"[^\"]*\"/versionName     = \"${{ steps.version.outputs.name }}\"/" app/build.gradle.kts
-          echo "Version set to ${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})"
 
       - name: Grant gradlew execute
         run: chmod +x gradlew
 
-      # ── Build release APK (unsigned first, then sign) ──────
       - name: Build Release APK
         run: |
           ./gradlew assembleRelease \
@@ -143,7 +135,6 @@ jobs:
             --print-certs \
             app/build/outputs/apk/release/projectexe-${{ steps.version.outputs.name }}-signed.apk
 
-      # ── Build AAB (for sideloading via bundletool) ─────────
       - name: Build Release AAB
         run: |
           ./gradlew bundleRelease \
@@ -160,7 +151,6 @@ jobs:
             --min-sdk-version 28 \
             app/build/outputs/bundle/release/app-release.aab
 
-      # ── APK size report ────────────────────────────────────
       - name: Generate size report
         id: sizes
         run: |
@@ -168,28 +158,24 @@ jobs:
           AAB_SIZE=$(du -sh app/build/outputs/bundle/release/app-release.aab | cut -f1)
           echo "apk_size=$APK_SIZE" >> $GITHUB_OUTPUT
           echo "aab_size=$AAB_SIZE" >> $GITHUB_OUTPUT
-          echo "APK: $APK_SIZE | AAB: $AAB_SIZE"
 
-      # ── Upload artifacts ───────────────────────────────────
       - name: Upload signed APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: projectexe-${{ steps.version.outputs.name }}-apk
           path: app/build/outputs/apk/release/projectexe-${{ steps.version.outputs.name }}-signed.apk
           retention-days: 90
 
       - name: Upload AAB artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: projectexe-${{ steps.version.outputs.name }}-aab
           path: app/build/outputs/bundle/release/app-release.aab
           retention-days: 90
 
-      # ── GitHub Release ─────────────────────────────────────
       - name: Generate release notes
         id: release_notes
         run: |
-          # Extract changelog between last two tags
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -n "$PREV_TAG" ]; then
             CHANGES=$(git log --pretty=format:"- %s (%h)" "$PREV_TAG"..HEAD | head -30)
@@ -201,7 +187,7 @@ jobs:
           echo "EOF"          >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name:   ${{ steps.version.outputs.tag }}
           name:       "Project.EXE ${{ steps.version.outputs.name }}"
@@ -221,7 +207,6 @@ jobs:
             - Target: arm64-v8a (Cortex-A78 / Revvl 7 optimized)
 
             ### Installation
-            Download `projectexe-${{ steps.version.outputs.name }}-signed.apk` and install via:
             ```
             adb install projectexe-${{ steps.version.outputs.name }}-signed.apk
             ```
@@ -238,7 +223,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Secure cleanup — remove keystore from runner
       - name: Cleanup keystore
         if: always()
         run: rm -f keystore.jks
