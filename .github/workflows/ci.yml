@@ -2,9 +2,9 @@ name: CI — Build & Validate
 
 on:
   push:
-    branches: [ main, develop, 'feature/**', 'fix/**' ]
+    branches: [ master, main, develop, 'feature/**', 'fix/**' ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ master, main, develop ]
   workflow_dispatch:
     inputs:
       debug_build:
