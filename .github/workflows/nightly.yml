@@ -2,7 +2,7 @@ name: Nightly — Submodule Freshness & Build
 
 on:
   schedule:
-    - cron: '0 3 * * *'   # 3 AM UTC daily
+    - cron: '0 3 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -19,12 +19,12 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       llama_updated: ${{ steps.check.outputs.updated }}
-      llama_new_sha:  ${{ steps.check.outputs.new_sha }}
-      llama_cur_sha:  ${{ steps.check.outputs.cur_sha }}
+      llama_new_sha: ${{ steps.check.outputs.new_sha }}
+      llama_cur_sha: ${{ steps.check.outputs.cur_sha }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -51,19 +51,19 @@ jobs:
 
     steps:
       - name: Checkout + submodules
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
       - name: Setup JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
           cache: gradle
 
       - name: Cache NDK artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             app/.cxx
@@ -88,13 +88,13 @@ jobs:
             -Pandroid.ndkVersion=${{ env.NDK_VERSION }}
 
       - name: Upload nightly APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: nightly-${{ github.run_number }}-${{ github.sha }}
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 3
 
-      - name: Notify if llama.cpp has updates
+      - name: Open issue if llama.cpp has updates
         if: needs.check-submodule.outputs.llama_updated == 'true'
         uses: actions/github-script@v7
         with:
@@ -103,13 +103,13 @@ jobs:
               owner: context.repo.owner,
               repo:  context.repo.repo,
               title: `[Nightly] llama.cpp upstream update available`,
-              body:  [
+              body: [
                 '## llama.cpp Update Detected',
                 '',
                 `Current submodule: \`${{ needs.check-submodule.outputs.llama_cur_sha }}\``,
                 `Upstream master:   \`${{ needs.check-submodule.outputs.llama_new_sha }}\``,
                 '',
-                'To update the submodule:',
+                'To update:',
                 '```bash',
                 'git -C app/src/main/cpp/llama.cpp pull origin master',
                 'git add app/src/main/cpp/llama.cpp',
