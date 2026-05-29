@@ -2,9 +2,9 @@ name: CI — Build & Validate
 
 on:
   push:
-    branches: [ master, main, develop, 'feature/**', 'fix/**' ]
+    branches: [ master, develop, 'feature/**', 'fix/**' ]
   pull_request:
-    branches: [ master, main, develop ]
+    branches: [ master, develop ]
   workflow_dispatch:
     inputs:
       debug_build:
@@ -50,13 +50,10 @@ jobs:
       - name: Grant gradlew execute
         run: chmod +x gradlew
 
-      # lintDebug targets only the debug variant and writes
-      # app/build/reports/lint-results-debug.html
       - name: Run Android Lint
         run: ./gradlew lintDebug --no-daemon --continue
         continue-on-error: true
 
-      # Show what lint actually wrote so the glob never silently misses
       - name: List lint outputs
         if: always()
         run: find app/build/reports -name '*.html' -o -name '*.xml' 2>/dev/null || echo "No lint reports found"
@@ -66,7 +63,6 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: lint-report-${{ github.sha }}
-          # Double-star covers both the root reports dir and any variant subdir
           path: app/build/reports/**/lint-results*.html
           if-no-files-found: warn
           retention-days: 7
@@ -149,8 +145,8 @@ jobs:
           APK=$(find app/build/outputs/apk/debug -name '*.apk' | head -1)
           SIZE=$(du -sh "$APK" | cut -f1)
           echo "APK: $APK ($SIZE)"
-          echo "APK_PATH=$APK"   >> $GITHUB_ENV
-          echo "APK_SIZE=$SIZE"  >> $GITHUB_ENV
+          echo "APK_PATH=$APK"  >> $GITHUB_ENV
+          echo "APK_SIZE=$SIZE" >> $GITHUB_ENV
 
       - name: Upload Debug APK
         if: github.event_name == 'push' || github.event.inputs.debug_build == 'true'
