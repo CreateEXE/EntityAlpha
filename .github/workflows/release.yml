@@ -39,6 +39,14 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Verify llama.cpp submodule
+        run: |
+          if [ ! -f "app/src/main/cpp/llama.cpp/CMakeLists.txt" ]; then
+            echo "::error::llama.cpp submodule is missing. Cannot build release without it."
+            echo "::error::Add it via GitHub Desktop and push before tagging a release."
+            exit 1
+          fi
+
       - name: Extract version from tag
         id: version
         run: |
@@ -48,7 +56,6 @@ jobs:
           echo "tag=$TAG"           >> $GITHUB_OUTPUT
           echo "name=$VERSION"      >> $GITHUB_OUTPUT
           echo "code=$VERSION_CODE" >> $GITHUB_OUTPUT
-          echo "Building: $VERSION (code: $VERSION_CODE)"
 
       - name: Setup JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v5
@@ -92,17 +99,9 @@ jobs:
             "cmake;3.22.1" \
             "build-tools;${{ env.BUILD_TOOLS }}"
 
-      - name: Verify llama.cpp submodule
-        run: |
-          if [ ! -f "app/src/main/cpp/llama.cpp/CMakeLists.txt" ]; then
-            echo "::error::llama.cpp submodule not found"
-            exit 1
-          fi
-
       - name: Decode keystore
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 -d > keystore.jks
-          ls -la keystore.jks
 
       - name: Inject version into build.gradle.kts
         run: |
@@ -210,13 +209,6 @@ jobs:
             ```
             adb install projectexe-${{ steps.version.outputs.name }}-signed.apk
             ```
-
-            ### Model Setup
-            ```
-            adb push your-model.gguf \
-              /sdcard/Android/data/com.projectexe/files/models/
-            ```
-            Recommended: `qwen2.5-1.5b-instruct-q4_k_m.gguf` (~1GB) for Revvl 7
           files: |
             app/build/outputs/apk/release/projectexe-${{ steps.version.outputs.name }}-signed.apk
             app/build/outputs/bundle/release/app-release.aab
