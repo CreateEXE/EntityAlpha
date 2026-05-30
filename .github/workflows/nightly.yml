@@ -73,6 +73,15 @@ jobs:
           distribution: temurin
           cache: gradle
 
+      - name: Ensure gradle-wrapper.jar exists
+        run: |
+          JAR="gradle/wrapper/gradle-wrapper.jar"
+          if [ ! -f "$JAR" ]; then
+            mkdir -p gradle/wrapper
+            curl -sSL "https://github.com/gradle/gradle/raw/v8.7.0/gradle/wrapper/gradle-wrapper.jar" \
+              -o "$JAR"
+          fi
+
       - name: Cache NDK artifacts
         uses: actions/cache@v5
         with:
@@ -83,7 +92,7 @@ jobs:
           restore-keys: ndk-${{ env.NDK_VERSION }}-
 
       - name: Setup Android SDK + NDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install NDK
         run: |
@@ -103,6 +112,7 @@ jobs:
         with:
           name: nightly-${{ github.run_number }}-${{ github.sha }}
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
           retention-days: 3
 
       - name: Open issue if llama.cpp has updates
@@ -120,11 +130,13 @@ jobs:
                 `Current submodule: \`${{ needs.check-submodule.outputs.llama_cur_sha }}\``,
                 `Upstream master:   \`${{ needs.check-submodule.outputs.llama_new_sha }}\``,
                 '',
-                'To update:',
+                'To update in Termux:',
                 '```bash',
+                'cd Backend_Alpha',
                 'git -C app/src/main/cpp/llama.cpp pull origin master',
                 'git add app/src/main/cpp/llama.cpp',
                 'git commit -m "chore: update llama.cpp submodule"',
+                'git push',
                 '```',
                 '',
                 `Triggered by nightly run #${{ github.run_number }}`,
