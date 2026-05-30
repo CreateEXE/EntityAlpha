@@ -43,7 +43,6 @@ jobs:
         run: |
           if [ ! -f "app/src/main/cpp/llama.cpp/CMakeLists.txt" ]; then
             echo "::error::llama.cpp submodule is missing. Cannot build release without it."
-            echo "::error::Add it via GitHub Desktop and push before tagging a release."
             exit 1
           fi
 
@@ -63,6 +62,15 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
           cache: gradle
+
+      - name: Ensure gradle-wrapper.jar exists
+        run: |
+          JAR="gradle/wrapper/gradle-wrapper.jar"
+          if [ ! -f "$JAR" ]; then
+            mkdir -p gradle/wrapper
+            curl -sSL "https://github.com/gradle/gradle/raw/v8.7.0/gradle/wrapper/gradle-wrapper.jar" \
+              -o "$JAR"
+          fi
 
       - name: Get llama.cpp SHA for cache key
         id: llama_sha
@@ -90,7 +98,7 @@ jobs:
           restore-keys: gradle-
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install NDK + CMake
         run: |
