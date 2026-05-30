@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.ProjectEXE" parent="android:Theme.Material.NoTitleBar">
+    <!--
+        Theme.Material.NoTitleBar does not exist at minSdk 28.
+        Theme.AppCompat.NoActionBar is the correct AndroidX equivalent.
+    -->
+    <style name="Theme.ProjectEXE" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowBackground">#FF020408</item>
         <item name="android:statusBarColor">#FF050810</item>
         <item name="android:navigationBarColor">#FF050810</item>
