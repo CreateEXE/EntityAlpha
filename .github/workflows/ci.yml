@@ -39,34 +39,15 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
-          cache: gradle
 
-      - name: Cache Gradle wrapper
-        uses: actions/cache@v5
+      # Handles Gradle distribution download, caching, and wrapper jar automatically
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
-          path: ~/.gradle/wrapper
-          key: gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
-
-      # Download the wrapper jar if it is missing (binary — cannot be stored as text in GitHub browser)
-      - name: Ensure gradle-wrapper.jar exists
-        run: |
-          JAR="gradle/wrapper/gradle-wrapper.jar"
-          if [ ! -f "$JAR" ]; then
-            echo "gradle-wrapper.jar missing — downloading..."
-            mkdir -p gradle/wrapper
-            curl -sSL "https://github.com/gradle/gradle/raw/v8.7.0/gradle/wrapper/gradle-wrapper.jar" \
-              -o "$JAR"
-            echo "Downloaded: $(du -sh $JAR | cut -f1)"
-          else
-            echo "gradle-wrapper.jar present: $(du -sh $JAR | cut -f1)"
-          fi
-
-      - name: Grant gradlew execute
-        run: chmod +x gradlew
+          cache-read-only: false
 
       - name: Run Android Lint
         run: ./gradlew lintDebug --no-daemon --continue
-        continue-on-error: true
 
       - name: List lint outputs
         if: always()
@@ -102,20 +83,11 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
-          cache: gradle
 
-      - name: Ensure gradle-wrapper.jar exists
-        run: |
-          JAR="gradle/wrapper/gradle-wrapper.jar"
-          if [ ! -f "$JAR" ]; then
-            echo "gradle-wrapper.jar missing — downloading..."
-            mkdir -p gradle/wrapper
-            curl -sSL "https://github.com/gradle/gradle/raw/v8.7.0/gradle/wrapper/gradle-wrapper.jar" \
-              -o "$JAR"
-            echo "Downloaded: $(du -sh $JAR | cut -f1)"
-          else
-            echo "gradle-wrapper.jar present: $(du -sh $JAR | cut -f1)"
-          fi
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
 
       - name: Get llama.cpp submodule SHA
         id: llama_sha
@@ -133,15 +105,6 @@ jobs:
           restore-keys: |
             ndk-${{ env.NDK_VERSION }}-${{ steps.llama_sha.outputs.sha }}-
             ndk-${{ env.NDK_VERSION }}-
-
-      - name: Cache Gradle dependencies
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/libs.versions.toml') }}
-          restore-keys: gradle-
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
@@ -163,9 +126,6 @@ jobs:
             echo "present=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Grant gradlew execute
-        run: chmod +x gradlew
-
       - name: Build Debug APK
         if: steps.check_llama.outputs.present == 'true'
         run: |
@@ -179,7 +139,6 @@ jobs:
         if: steps.check_llama.outputs.present == 'false'
         run: |
           echo "APK build skipped — llama.cpp submodule missing."
-          echo "Run in Termux: git submodule add https://github.com/ggerganov/llama.cpp app/src/main/cpp/llama.cpp"
 
       - name: Collect APK info
         if: steps.check_llama.outputs.present == 'true'
@@ -187,3 +146,48 @@ jobs:
           APK=$(find app/build/outputs/apk/debug -name '*.apk' 2>/dev/null | head -1)
           if [ -z "$APK" ]; then
             echo "No APK found — build may have failed. Check build.log above."
+          else
+            SIZE=$(du -sh "$APK" | cut -f1)
+            echo "APK: $APK ($SIZE)"
+            echo "APK_PATH=$APK"  >> $GITHUB_ENV
+            echo "APK_SIZE=$SIZE" >> $GITHUB_ENV
+          fi
+
+      - name: Upload Debug APK
+        if: >
+          steps.check_llama.outputs.present == 'true' &&
+          (github.event_name == 'push' || github.event.inputs.debug_build == 'true')
+        uses: actions/upload-artifact@v6
+        with:
+          name: debug-apk-${{ github.sha }}
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: build-log-failure-${{ github.sha }}
+          path: build.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: PR comment with build status
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const llamaPresent = '${{ steps.check_llama.outputs.present }}' === 'true';
+            const status = !llamaPresent
+              ? '⚠️ APK build skipped — llama.cpp submodule not initialised yet'
+              : ('${{ job.status }}' === 'success'
+                  ? '✅ Debug APK built successfully'
+                  : '❌ Debug APK build failed');
+            const size = '${{ env.APK_SIZE }}';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Build Result\n${status}\n${size ? 'APK Size: ' + size : ''}\nCommit: \`${context.sha.slice(0,7)}\``
+            });
