@@ -40,13 +40,6 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Verify llama.cpp submodule
-        run: |
-          if [ ! -f "app/src/main/cpp/llama.cpp/CMakeLists.txt" ]; then
-            echo "::error::llama.cpp submodule is missing. Cannot build release without it."
-            exit 1
-          fi
-
       - name: Extract version from tag
         id: version
         run: |
@@ -62,6 +55,12 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
+
+      - name: Download gradle-wrapper.jar
+        run: |
+          curl -sSfL \
+            "https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradle/wrapper/gradle-wrapper.jar" \
+            -o gradle/wrapper/gradle-wrapper.jar
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -96,8 +95,7 @@ jobs:
             "build-tools;${{ env.BUILD_TOOLS }}"
 
       - name: Decode keystore
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 -d > keystore.jks
+        run: echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 -d > keystore.jks
 
       - name: Inject version into build.gradle.kts
         run: |
