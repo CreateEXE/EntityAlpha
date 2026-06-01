@@ -61,16 +61,11 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
-          cache: gradle
 
-      - name: Ensure gradle-wrapper.jar exists
-        run: |
-          JAR="gradle/wrapper/gradle-wrapper.jar"
-          if [ ! -f "$JAR" ]; then
-            mkdir -p gradle/wrapper
-            curl -sSL "https://github.com/gradle/gradle/raw/v8.7.0/gradle/wrapper/gradle-wrapper.jar" \
-              -o "$JAR"
-          fi
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
 
       - name: Get llama.cpp SHA for cache key
         id: llama_sha
@@ -87,15 +82,6 @@ jobs:
           key: ndk-release-${{ env.NDK_VERSION }}-${{ steps.llama_sha.outputs.sha }}-${{ hashFiles('app/src/main/cpp/**') }}
           restore-keys: |
             ndk-${{ env.NDK_VERSION }}-${{ steps.llama_sha.outputs.sha }}-
-
-      - name: Restore Gradle cache
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-release-${{ hashFiles('**/*.gradle.kts', 'gradle/libs.versions.toml') }}
-          restore-keys: gradle-
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
@@ -115,9 +101,6 @@ jobs:
         run: |
           sed -i "s/versionCode     = [0-9]*/versionCode     = ${{ steps.version.outputs.code }}/" app/build.gradle.kts
           sed -i "s/versionName     = \"[^\"]*\"/versionName     = \"${{ steps.version.outputs.name }}\"/" app/build.gradle.kts
-
-      - name: Grant gradlew execute
-        run: chmod +x gradlew
 
       - name: Build Release APK
         run: |
