@@ -20,7 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       llama_updated: ${{ steps.check.outputs.updated }}
-      llama_present: ${{ steps.check.outputs.present }}
       llama_new_sha: ${{ steps.check.outputs.new_sha }}
       llama_cur_sha: ${{ steps.check.outputs.cur_sha }}
 
@@ -30,18 +29,9 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Check llama.cpp status
+      - name: Check llama.cpp for upstream updates
         id: check
         run: |
-          if [ ! -f "app/src/main/cpp/llama.cpp/CMakeLists.txt" ]; then
-            echo "::warning::llama.cpp submodule not initialised — skipping nightly build."
-            echo "present=false" >> $GITHUB_OUTPUT
-            echo "updated=false" >> $GITHUB_OUTPUT
-            echo "cur_sha=none"  >> $GITHUB_OUTPUT
-            echo "new_sha=none"  >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          echo "present=true" >> $GITHUB_OUTPUT
           CUR=$(git -C app/src/main/cpp/llama.cpp rev-parse HEAD)
           git -C app/src/main/cpp/llama.cpp fetch origin master --quiet
           NEW=$(git -C app/src/main/cpp/llama.cpp rev-parse origin/master)
@@ -59,7 +49,6 @@ jobs:
     name: Nightly Debug Build
     runs-on: ubuntu-latest
     needs: check-submodule
-    if: needs.check-submodule.outputs.llama_present == 'true'
 
     steps:
       - name: Checkout + submodules
@@ -72,6 +61,12 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
+
+      - name: Download gradle-wrapper.jar
+        run: |
+          curl -sSfL \
+            "https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradle/wrapper/gradle-wrapper.jar" \
+            -o gradle/wrapper/gradle-wrapper.jar
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -106,7 +101,6 @@ jobs:
         with:
           name: nightly-${{ github.run_number }}-${{ github.sha }}
           path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
           retention-days: 3
 
       - name: Open issue if llama.cpp has updates
