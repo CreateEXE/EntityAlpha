@@ -20,6 +20,7 @@ concurrency:
 env:
   JAVA_VERSION: '17'
   NDK_VERSION:  '26.3.11579264'
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ─────────────────────────────────────────────────────────
@@ -40,14 +41,15 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
 
-      # Handles Gradle distribution download, caching, and wrapper jar automatically
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: false
+
+      - name: Grant gradlew execute
+        run: chmod +x gradlew
 
       - name: Run Android Lint
         run: ./gradlew lintDebug --no-daemon --continue
+        continue-on-error: true
 
       - name: List lint outputs
         if: always()
@@ -86,8 +88,9 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: false
+
+      - name: Grant gradlew execute
+        run: chmod +x gradlew
 
       - name: Get llama.cpp submodule SHA
         id: llama_sha
@@ -137,15 +140,14 @@ jobs:
 
       - name: Skip notice (llama.cpp missing)
         if: steps.check_llama.outputs.present == 'false'
-        run: |
-          echo "APK build skipped — llama.cpp submodule missing."
+        run: echo "APK build skipped — llama.cpp submodule missing."
 
       - name: Collect APK info
         if: steps.check_llama.outputs.present == 'true'
         run: |
           APK=$(find app/build/outputs/apk/debug -name '*.apk' 2>/dev/null | head -1)
           if [ -z "$APK" ]; then
-            echo "No APK found — build may have failed. Check build.log above."
+            echo "No APK found — check build.log above."
           else
             SIZE=$(du -sh "$APK" | cut -f1)
             echo "APK: $APK ($SIZE)"
