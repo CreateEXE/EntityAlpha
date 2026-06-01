@@ -18,6 +18,10 @@ import com.projectexe.data.*
 import com.projectexe.engine.*
 import com.projectexe.ui.UiState
 import com.projectexe.ui.theme.*
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.material3.ScrollableTabRow
+
 
 // ─────────────────────────────────────────────────────────────
 //  DEBUG SCREEN — testing, tuning, prompt inspection, A/B
@@ -708,6 +712,3 @@ private fun ErrorTab(ui: UiState, onClear: () -> Unit) {
 }
 
 // Needed imports
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
-import androidx.compose.material3.ScrollableTabRow

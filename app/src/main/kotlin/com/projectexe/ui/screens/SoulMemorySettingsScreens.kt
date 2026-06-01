@@ -18,6 +18,9 @@ import com.projectexe.engine.ModelFileManager
 import com.projectexe.ui.UiState
 import com.projectexe.ui.theme.*
 import android.content.Context
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.material3.Divider
+
 
 // ═══════════════════════════════════════════════════════════════
 //  SOUL EDITOR SCREEN
@@ -530,5 +533,3 @@ fun TagChip(text: String, color: Color) {
 }
 
 // Needed for SoulSection divider workaround
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.material3.Divider

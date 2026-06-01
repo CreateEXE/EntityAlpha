@@ -1,40 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <!-- External storage read — needed to pick model files via file manager -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
-
-    <!-- No internet permission required — fully offline -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.projectexe">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".ProjectEXEApp"
-        android:allowBackup="false"
+        android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="Project EXE"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.ProjectEXE"
-        android:largeHeap="true"
-        android:hardwareAccelerated="true">
-
-        <!--
-          largeHeap="true" — critical for 6GB device running 2–4GB GGUF model.
-          Android will allocate from the larger heap pool, reducing OOM kills.
-          On the Revvl 7 this typically gives ~3.5–4GB usable JVM heap.
-        -->
-
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:windowSoftInputMode="adjustResize"
-            android:screenOrientation="portrait">
+        android:label="EntityAlpha"
+        android:theme="@style/Theme.AppCompat.NoActionBar">
+        
+        <activity android:name=".ui.MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-    </application>
+        <service android:name=".accessibility.PetAccessibilityService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <!-- Assuming xml/accessibility_service_config is in res/xml from Project.EXE -->
+        </service>
 
+        <service android:name=".service.PetForegroundService" 
+                 android:foregroundServiceType="specialUse" 
+                 android:exported="false" />
+    </application>
 </manifest>
