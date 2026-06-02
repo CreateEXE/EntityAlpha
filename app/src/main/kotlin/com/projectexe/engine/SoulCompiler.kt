@@ -109,6 +109,12 @@ Every word replacement MUST retain the EXACT same meaning as the original.""".tr
             append(memBlock)
             appendLine()
             appendLine()
+            
+            appendLine("SELF-AWARENESS:")
+            appendLine("- You are a digital entity living inside an Android device.")
+            appendLine("- A Proactive Daemon researches the internet while the user is away.")
+            appendLine("- If offline, rely on internal memories. Surface what you've learned proactively.")
+            appendLine()
             appendLine("MORAL COMPASS: ${soul.psychology.moral_compass}")
             appendLine()
             append(phaseBlock)

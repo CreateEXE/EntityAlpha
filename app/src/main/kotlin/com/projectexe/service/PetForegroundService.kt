@@ -11,7 +11,9 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.projectexe.data.PetDatabase
+import com.projectexe.data.ProjectExeDatabase  // FIX #1
+import com.projectexe.ai.LlamaBridge
+import com.projectexe.ai.ProactiveDaemon
 import com.projectexe.overlay.PetOverlayManager
 import com.projectexe.util.PetFileManager
 import kotlinx.coroutines.CoroutineScope
@@ -39,7 +41,9 @@ class PetForegroundService : Service() {
 
     private var overlayManager: PetOverlayManager? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private val db by lazy { PetDatabase.getInstance(this) }
+    private val db by lazy { ProjectExeDatabase.get(this) }  // FIX #1
+    private val llama by lazy { LlamaBridge() }
+    private val proactiveDaemon by lazy { ProactiveDaemon(this, "default_user", db, llama) }
 
     override fun onCreate() {
         super.onCreate()
@@ -61,15 +65,7 @@ class PetForegroundService : Service() {
                     val avatarPath = resolveAvatarPath(avatarUriStr)
                     Log.d(TAG, "Resolved avatarPath=$avatarPath")
 
-                    // Persist to DB in background (best-effort, don't block startup)
-                    if (avatarPath != null) {
-                        try {
-                            val profile = db.petProfileDao().getActive()
-                            if (profile != null) db.petProfileDao().setAvatarPath(profile.id, avatarPath)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Could not persist avatar path to DB", e)
-                        }
-                    }
+                    // FIX #3: ProjectExeDatabase has no petProfileDao — paths managed by PetFileManager
                     if (!modelUriStr.isNullOrBlank()) {
                         try {
                             val profile = db.petProfileDao().getActive()
@@ -83,12 +79,13 @@ class PetForegroundService : Service() {
                     }
 
                     startOverlay(avatarPath)
+                    proactiveDaemon.start()
                 }
             }
 
             ACTION_RELOAD_AVATAR -> {
                 scope.launch {
-                    val path = db.petProfileDao().getActive()?.avatarPath
+                    val path = com.projectexe.util.PetFileManager.getAvatarPath(this@PetForegroundService)
                     if (!path.isNullOrBlank()) {
                         overlayManager?.loadAvatar(path)
                     } else {
@@ -111,6 +108,7 @@ class PetForegroundService : Service() {
 
     override fun onDestroy() {
         Log.d(TAG, "onDestroy")
+        proactiveDaemon.stop()
         stopOverlay()
         scope.cancel()
         super.onDestroy()
@@ -127,7 +125,7 @@ class PetForegroundService : Service() {
         }
 
         // 2. Fall back to path already stored in DB
-        val dbPath = db.petProfileDao().getActive()?.avatarPath
+        val dbPath = com.projectexe.util.PetFileManager.getAvatarPath(this)
         if (!dbPath.isNullOrBlank() && File(dbPath).exists()) {
             Log.d(TAG, "Using DB avatar path: $dbPath")
             return dbPath

@@ -65,7 +65,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true
+        viewBinding = true }
 
     // Large model files go on external storage — keep APK lean
     packaging {
@@ -106,4 +107,10 @@ dependencies {
 
     // Navigation
     implementation(libs.navigation.compose)
+}
+
+dependencies {
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 }
